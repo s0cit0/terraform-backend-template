@@ -6,7 +6,59 @@ What it is:
 - KMS encrypts state at rest
 
 Quick start:
-1) Copy template → real backend file (not committed):
+1) **Bootstrap the remote backend infrastructure (one-time).**
+   Use a dedicated AWS account/region for Terraform state and create the
+   supporting resources. The snippet below shows secure defaults with the
+   AWS CLI; update the `BUCKET_NAME`, `LOCK_TABLE`, and `AWS_REGION`
+   variables before running. You must have permissions to manage S3,
+   DynamoDB, and KMS.
+
+   ```bash
+   export BUCKET_NAME="my-terraform-state-bucket"
+   export LOCK_TABLE="terraform-state-locks"
+   export AWS_REGION="us-east-1"
+
+   # Create an S3 bucket with Block Public Access, versioning, and default SSE-KMS.
+   if [ "$AWS_REGION" = "us-east-1" ]; then
+     CREATE_BUCKET_OPTS=""
+   else
+     CREATE_BUCKET_OPTS="--create-bucket-configuration LocationConstraint=$AWS_REGION"
+   fi
+
+   aws s3api create-bucket \
+     --bucket "$BUCKET_NAME" \
+     $CREATE_BUCKET_OPTS \
+     --region $AWS_REGION
+
+   aws s3api put-public-access-block \
+     --bucket "$BUCKET_NAME" \
+     --public-access-block-configuration 'BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true'
+
+   aws s3api put-bucket-versioning \
+     --bucket "$BUCKET_NAME" \
+     --versioning-configuration Status=Enabled
+
+   KMS_KEY_ARN=$(aws kms create-key --region $AWS_REGION --query 'KeyMetadata.Arn' --output text)
+   aws kms create-alias --alias-name "alias/terraform-state" --target-key-id "$KMS_KEY_ARN" --region $AWS_REGION
+
+   aws s3api put-bucket-encryption \
+     --bucket "$BUCKET_NAME" \
+     --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"aws:kms","KMSMasterKeyID":"'$KMS_KEY_ARN'"}}]}'
+
+   # Create the DynamoDB table for state locking.
+   aws dynamodb create-table \
+     --table-name "$LOCK_TABLE" \
+     --attribute-definitions AttributeName=LockID,AttributeType=S \
+     --key-schema AttributeName=LockID,KeyType=HASH \
+     --billing-mode PAY_PER_REQUEST \
+     --region $AWS_REGION
+   ```
+
+   Record the bucket name, KMS key ARN, region, and DynamoDB table name for
+   the backend configuration. If you already have secure equivalents, you
+   can reuse them and skip these commands.
+
+2) Copy template → real backend file (not committed):
    cp backend/dev.example.hcl backend/dev.hcl
    Edit backend/dev.hcl and replace:
    - <STATE_BUCKET_NAME>  (S3 bucket name)
@@ -15,10 +67,10 @@ Quick start:
    - <DDB_LOCK_TABLE_NAME>
    - <KMS_KEY_ARN>        (full ARN)
 
-2) Initialize Terraform with the backend:
+3) Initialize Terraform with the backend:
    terraform init -reconfigure -backend-config=backend/dev.hcl
 
-3) Sanity check (no resources yet):
+4) Sanity check (no resources yet):
    terraform plan
    Expect: "No changes."
 
