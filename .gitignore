@@ -1,0 +1,10 @@
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfplan
+# Keep the lockfile TRACKED for reproducible builds
+# .terraform.lock.hcl
+# Backend configs: keep REAL values local; commit only the example
+backend/*.hcl
+!backend/*.example.hcl
