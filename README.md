@@ -77,6 +77,17 @@ Quick start:
 
 3) Initialize Terraform with the backend for that environment:
    terraform init -reconfigure -backend-config="backend/${TF_ENV}.hcl"
+2) Copy template → real backend file (not committed):
+   cp backend/dev.example.hcl backend/dev.hcl
+   Edit backend/dev.hcl and replace:
+   - <STATE_BUCKET_NAME>  (S3 bucket name)
+   - <STATE_KEY_PATH>     (e.g., my-app/dev/terraform.tfstate)
+   - <AWS_REGION>         (e.g., us-east-1)
+   - <DDB_LOCK_TABLE_NAME>
+   - <KMS_KEY_ARN>        (full ARN)
+
+3) Initialize Terraform with the backend:
+   terraform init -reconfigure -backend-config=backend/dev.hcl
 
 4) Sanity check (no resources yet):
    terraform plan
